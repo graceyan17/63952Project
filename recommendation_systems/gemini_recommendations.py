@@ -14,12 +14,12 @@ df.set_index('join_title', inplace=True)
 print('columns', df.columns)
 
 # Configure Gemini
-# genai.configure(api_key='INSERT API KEY HERE')
-# print("Available models:")
-# for m in genai.list_models():
-#     if 'generateContent' in m.supported_generation_methods:
-#         print(m.name)
-# model = genai.GenerativeModel('models/gemini-2.0-flash')
+genai.configure(api_key='YOUR_API_KEY')
+print("Available models:")
+for m in genai.list_models():
+    if 'generateContent' in m.supported_generation_methods:
+        print(m.name)
+model = genai.GenerativeModel('models/gemini-2.0-flash')
 
 def get_gemini_recommendations(user_high_rated_books, candidate_books, top_k=50):
     """
@@ -72,6 +72,24 @@ Your response (JSON array only, no explanations):"""
     
 import subprocess
 import json
+
+# checkpoint_path = "datasets/llama_recommendations_checkpoint.json"
+checkpoint_path = "datasets/gemini_recommendations_checkpoint.json"
+recommendations = {}
+
+# Load checkpoint if exists
+if os.path.exists(checkpoint_path):
+    print("Loading checkpoint...")
+    with open(checkpoint_path, "r") as f:
+        saved = json.load(f)
+
+    # Convert keys back to int
+    recommendations = {int(uid): recs for uid, recs in saved.items()}
+    print(f"Loaded {len(recommendations)} existing user recommendations")
+else:
+    print("No checkpoint found, starting fresh.")
+
+k = 50  # keep same as your save structure
 
 def get_llama_recommendations(user_high_rated_books, candidate_books, top_k=50):
     """
@@ -130,7 +148,6 @@ JSON only:
         return []
 
 # Generate recommendations using Gemini
-recommendations = {}
 k = 50
 
 unmasked_df = pd.read_csv("datasets/train_edges.csv")
@@ -141,12 +158,15 @@ user_books = unmasked_df.groupby('User-ID').apply(
 
 for i, (user_id, books_ratings) in enumerate(user_books.items()):
     print(f"Processing user {user_id} ({i+1}/{len(user_books)})")
-    
+    if user_id in recommendations:
+        print(f"Skipping user {user_id} (already processed)")
+        continue
+
     # Get high-rated books for this user
     high_rated_unmasked = [join_title for join_title, rating in books_ratings if rating > 7]
     
-    if len(high_rated_unmasked) == 0:
-        print(f"  User {user_id} has no highly rated books, skipping")
+    if len(high_rated_unmasked) < 5:
+        print(f"  User {user_id} has <5 highly rated books, skipping")
         continue
     
     print(f"  User {user_id} has rated {len(high_rated_unmasked)} books highly")
@@ -160,7 +180,7 @@ for i, (user_id, books_ratings) in enumerate(user_books.items()):
     print(f"  Candidate pool: {len(candidate_books)} books")
     
     # Get recommendations from Llama
-    user_recommendations = get_llama_recommendations(
+    user_recommendations = get_gemini_recommendations(
         high_rated_unmasked, 
         candidate_books, 
         top_k=k
@@ -176,12 +196,12 @@ for i, (user_id, books_ratings) in enumerate(user_books.items()):
     time.sleep(1)
     
     if (i + 1) % 10 == 0:
-        with open('datasets/llama_recommendations_checkpoint.json', 'w') as f:
+        with open('datasets/gemini_recommendations_checkpoint.json', 'w') as f:
             json.dump({str(k): v for k, v in recommendations.items()}, f, indent=2)
         print(f"  Checkpoint saved after {i+1} users")
 
 # Save final recommendations
-with open('datasets/llama_recommendations.json', 'w') as f:
+with open('datasets/gemini_recommendations.json', 'w') as f:
     json.dump({str(k): v for k, v in recommendations.items()}, f, indent=2)
 
 print(f"\nCompleted! Generated recommendations for {len(recommendations)} users")
