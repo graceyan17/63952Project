@@ -4,7 +4,7 @@ import pandas as pd
 
 def compute_recall(test_df, user_id, recommendations):
     true_items = set(
-        test_df[test_df["User-ID"] == user_id]["ISBN"].unique()
+        test_df[test_df["User-ID"] == user_id]["join_title"].unique()
     )
 
     if len(true_items) == 0:
